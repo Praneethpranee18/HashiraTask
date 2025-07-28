@@ -1,6 +1,7 @@
 import java.io.*;
 import java.math.BigInteger;
 import java.util.*;
+import java.util.regex.*;
 
 public class SecretFinder {
 
@@ -46,7 +47,7 @@ public class SecretFinder {
         return result;
     }
 
-    // Improved manual JSON parsing for your format (without external libs)
+    // Manual JSON parsing (no external library)
     private static List<Point> parseJsonFile(String filePath) throws IOException {
         BufferedReader br = new BufferedReader(new FileReader(filePath));
         StringBuilder jsonBuilder = new StringBuilder();
@@ -55,30 +56,44 @@ public class SecretFinder {
         while ((line = br.readLine()) != null) {
             jsonBuilder.append(line.trim());
         }
+        br.close();
 
         String json = jsonBuilder.toString();
 
-        // Extract n and k from keys block using regex
-        int n = Integer.parseInt(json.replaceAll(".\"n\"\\s:\\s*(\\d+).*", "$1"));
-        int k = Integer.parseInt(json.replaceAll(".\"k\"\\s:\\s*(\\d+).*", "$1"));
+        // Extract "n" and "k" using regex
+        int n = -1, k = -1;
+        Pattern nPattern = Pattern.compile("\"n\"\\s*:\\s*(\\d+)");
+        Pattern kPattern = Pattern.compile("\"k\"\\s*:\\s*(\\d+)");
+
+        Matcher nMatcher = nPattern.matcher(json);
+        Matcher kMatcher = kPattern.matcher(json);
+
+        if (nMatcher.find()) {
+            n = Integer.parseInt(nMatcher.group(1));
+        }
+        if (kMatcher.find()) {
+            k = Integer.parseInt(kMatcher.group(1));
+        }
+
+        if (n == -1 || k == -1) {
+            throw new RuntimeException("Failed to extract 'n' or 'k' from JSON.");
+        }
 
         List<Point> allPoints = new ArrayList<>();
 
-        // Check keys from 0 up to 100 to find points
-        for (int i = 0; i <= 100; i++) {
-            String regexBase = "\"" + i + "\"\\s*:\\s*\\{[^}]\"base\"\\s:\\s*\"(\\d+)\"";
-            String regexValue = "\"" + i + "\"\\s*:\\s*\\{[^}]\"value\"\\s:\\s*\"([^\"]+)\"";
+        // Extract all key:value pairs like "1": {"base": "10", "value": "4"}
+        Pattern pointPattern = Pattern.compile("\"(\\d+)\"\\s*:\\s*\\{[^}]*\"base\"\\s*:\\s*\"(\\d+)\"[^}]*\"value\"\\s*:\\s*\"(\\w+)\"");
+        Matcher pointMatcher = pointPattern.matcher(json);
 
-            if (json.matches("." + regexBase + ".") && json.matches("." + regexValue + ".")) {
-                try {
-                    int base = Integer.parseInt(json.replaceAll("." + regexBase + ".", "$1"));
-                    String value = json.replaceAll("." + regexValue + ".", "$1");
-
-                    BigInteger y = new BigInteger(value, base);
-                    allPoints.add(new Point(i, y));
-                } catch (Exception e) {
-                    System.err.println("Failed to parse value for key " + i + ": " + e.getMessage());
-                }
+        while (pointMatcher.find()) {
+            try {
+                int x = Integer.parseInt(pointMatcher.group(1));
+                int base = Integer.parseInt(pointMatcher.group(2));
+                String value = pointMatcher.group(3);
+                BigInteger y = decode(value, base);
+                allPoints.add(new Point(x, y));
+            } catch (Exception e) {
+                System.err.println("Skipping invalid point: " + e.getMessage());
             }
         }
 
@@ -87,7 +102,7 @@ public class SecretFinder {
         }
 
         allPoints.sort(Comparator.comparingInt(p -> p.x));
-        return allPoints.subList(0, Math.min(k, allPoints.size())); // safe sublist
+        return allPoints.subList(0, Math.min(k, allPoints.size()));
     }
 
     public static void main(String[] args) throws IOException {
